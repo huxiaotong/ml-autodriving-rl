@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Minimal AWS foundation for autodriving RL training with SageMaker.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: autodriving-rl
+    AllowedPattern: "^[a-zA-Z0-9-]+$"
+  ArtifactBucketName:
+    Type: String
+    Default: ""
+    Description: Optional globally unique bucket name. Leave blank to auto-generate.
+  EcrRepositoryName:
+    Type: String
+    Default: autodriving-rl-training
+  EnableSageMakerFullAccess:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Attach AmazonSageMakerFullAccess for learning convenience. Keep false for tighter scoped policy.
+
+Conditions:
+  HasCustomBucketName: !Not [!Equals [!Ref ArtifactBucketName, ""]]
+  AttachSageMakerFullAccess: !Equals [!Ref EnableSageMakerFullAccess, "true"]
+
+Resources:
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !If [HasCustomBucketName, !Ref ArtifactBucketName, !Ref AWS::NoValue]
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  TrainingRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref EcrRepositoryName
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  SageMakerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-sagemaker-execution-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - sagemaker.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns: !If
+        - AttachSageMakerFullAccess
+        - - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+        - !Ref AWS::NoValue
+      Policies:
+        - PolicyName: AutodrivingRlSageMakerMinimalPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: S3ProjectBucketAccess
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Sid: EcrPullTrainingImage
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource:
+                  - !GetAtt TrainingRepository.Arn
+              - Sid: EcrAuth
+                Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: "*"
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+
+Outputs:
+  ArtifactBucketName:
+    Description: S3 bucket for configs, model artifacts, and evaluation reports.
+    Value: !Ref ArtifactBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-ArtifactBucketName"
+  TrainingRepositoryUri:
+    Description: ECR repository URI for the training/evaluation image.
+    Value: !GetAtt TrainingRepository.RepositoryUri
+    Export:
+      Name: !Sub "${AWS::StackName}-TrainingRepositoryUri"
+  SageMakerExecutionRoleArn:
+    Description: SageMaker execution role ARN.
+    Value: !GetAtt SageMakerExecutionRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-SageMakerExecutionRoleArn"
+
