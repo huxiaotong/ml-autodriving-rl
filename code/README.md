@@ -44,14 +44,14 @@ autodriving-rl/
 Run commands from the code directory:
 
 ```bash
-cd /Users/xiaotonghu/Documents/ML/autodriving-rl/code
+cd ML/autodriving-rl/code
 ```
 
 Set your region:
 
 ```bash
-export AWS_REGION=us-east-1
-export AWS_DEFAULT_REGION=us-east-1
+export AWS_REGION=ap-northeast-1
+export AWS_DEFAULT_REGION=ap-northeast-1
 ```
 
 Optional custom names:
@@ -144,7 +144,7 @@ Run each experiment by setting `EXPERIMENT_NAME` and `CONFIG_PATH` before upload
 
 ```bash
 export EXPERIMENT_NAME=highway-ppo-conservative
-export CONFIG_PATH=/Users/xiaotonghu/Documents/ML/autodriving-rl/code/configs/highway-ppo-conservative.yaml
+export CONFIG_PATH=ML/autodriving-rl/code/configs/highway-ppo-conservative.yaml
 ./infra/scripts/upload_config.sh
 ./infra/scripts/start_training_job.sh
 ```
